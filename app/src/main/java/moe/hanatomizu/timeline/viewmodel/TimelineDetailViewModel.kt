@@ -1,6 +1,7 @@
 package moe.hanatomizu.timeline.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import moe.hanatomizu.timeline.data.AppDatabase
@@ -260,9 +261,10 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
 
     /**
      * 导出当前时间线为图片。
+     * @param activityContext Activity 上下文（用于 ComposeView 离屏渲染附着窗口）
      * @param isDarkTheme 当前是否为深色主题（用于导出图片的配色）
      */
-    fun exportTimeline(isDarkTheme: Boolean) {
+    fun exportTimeline(activityContext: Context, isDarkTheme: Boolean) {
         if (_isExporting.value) return
 
         val events = _events.value
@@ -284,7 +286,7 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
 
         viewModelScope.launch {
             val file = ExportHelper.exportToFile(
-                context = getApplication(),
+                context = activityContext,
                 timelineTitle = timeline.title,
                 coverImagePath = timeline.coverImagePath,
                 events = events,

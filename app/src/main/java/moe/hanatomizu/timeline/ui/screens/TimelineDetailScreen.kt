@@ -165,7 +165,7 @@ fun TimelineDetailScreen(
                 actions = {
                     // 导出图片按钮
                     IconButton(
-                        onClick = { viewModel.exportTimeline(isDarkTheme) }
+                        onClick = { viewModel.exportTimeline(context, isDarkTheme) }
                     ) {
                         Icon(
                             Icons.Default.Share,

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -195,11 +194,11 @@ object ExportHelper {
             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         }
 
+        // 注意：不使用 verticalScroll，因为导出时需要测量完整高度
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(20.dp)
-                .verticalScroll(rememberScrollState())
         ) {
             // ── 头部：标题 + 导出时间 ──
             Text(
