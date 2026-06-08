@@ -93,7 +93,7 @@ import java.util.Locale
 /**
  * 时间线详情界面 —— 卡片列表 + 编辑弹窗布局。
  *
- * - 列表：按日期排列的卡片（默认升序，右上角可切换升降序），每张卡片显示日期、内容、缩略图、标签色带。
+ * - 列表：按日期排列的卡片（默认升序，右上角可切换升降序），每张卡片左侧有时间轴线 + 彩色圆点，内容显示日期时间、文本、缩略图。
  * - 点击卡片弹出编辑弹窗；长按卡片直接删除（需确认）。
  * - FAB 按钮创建新时间点。
  */
@@ -177,7 +177,7 @@ fun TimelineDetailScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(0.dp) // 卡片紧贴，时间轴线连续
             ) {
                 items(events, key = { it.id }) { event ->
                     EventCard(
@@ -235,9 +235,10 @@ fun TimelineDetailScreen(
 // ════════════════════════════════════════════════════════════════
 
 /**
- * 单条时间点卡片。
+ * 单条时间点卡片 —— 左侧有时间轴连接线 + 彩色圆点。
  *
- * 左侧有颜色条带，展示日期、内容文本（最多 3 行）、图片缩略图（可选）。
+ * 卡片自身绘制一段垂直灰线和居中圆点，卡片之间间距为 0，
+ * 各段灰线首尾相接形成一条连续的时间轴。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -261,19 +262,41 @@ private fun EventCard(
         Row(
             modifier = Modifier.height(IntrinsicSize.Min)
         ) {
-            // ── 左侧颜色条 ──
+            // ── 左侧时间轴指示区（线 + 圆点） ──
             Box(
                 modifier = Modifier
-                    .width(6.dp)
-                    .fillMaxHeight()
-                    .background(Color(event.labelColor))
-            )
+                    .width(28.dp)
+                    .fillMaxHeight(),
+                contentAlignment = Alignment.Center
+            ) {
+                // 垂直连接线（贯穿卡片全高，使用 outline 确保深色模式下可见）
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outline)
+                )
+                // 彩色圆点（垂直居中，描边使用 outline 保证深色模式下可见）
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color(event.labelColor))
+                        .border(
+                            width = 1.5.dp,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = CircleShape
+                        )
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
 
             // ── 内容区 ──
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(12.dp)
+                    .padding(top = 12.dp, end = 12.dp, bottom = 12.dp)
             ) {
                 // 日期时间
                 Text(
