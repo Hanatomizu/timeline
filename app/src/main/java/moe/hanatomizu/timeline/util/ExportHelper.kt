@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -69,17 +70,16 @@ object ExportHelper {
         context: Context,
         timelineTitle: String,
         coverImagePath: String?,
-        events: List<TimelineEventEntity>,
+        eventsWithImages: List<Pair<TimelineEventEntity, List<String>>>,
         isDarkTheme: Boolean
     ): File? {
-        // 先同步加载所有图片（避免 AsyncImage 异步时序导致导出图片中图片空白）
-        val loadedBitmaps = withContext(Dispatchers.IO) {
-            preloadImages(context, coverImagePath, events)
+        val bitmaps = withContext(Dispatchers.IO) {
+            preloadImages(context, coverImagePath, eventsWithImages)
         }
 
         val bitmap = withContext(Dispatchers.Main) {
             renderToBitmap(
-                context, timelineTitle, coverImagePath, events, loadedBitmaps, isDarkTheme
+                context, timelineTitle, coverImagePath, eventsWithImages, bitmaps, isDarkTheme
             )
         } ?: return null
 
@@ -95,11 +95,11 @@ object ExportHelper {
     private suspend fun preloadImages(
         context: Context,
         coverImagePath: String?,
-        events: List<TimelineEventEntity>
+        eventsWithImages: List<Pair<TimelineEventEntity, List<String>>>
     ): Map<String, Bitmap?> {
         val paths = mutableListOf<String>()
         coverImagePath?.let { paths.add(it) }
-        events.forEach { it.imagePath?.let { paths.add(it) } }
+        eventsWithImages.forEach { (_, images) -> paths.addAll(images) }
 
         val loader = Coil.imageLoader(context)
 
@@ -156,7 +156,7 @@ object ExportHelper {
         context: Context,
         timelineTitle: String,
         coverImagePath: String?,
-        events: List<TimelineEventEntity>,
+        eventsWithImages: List<Pair<TimelineEventEntity, List<String>>>,
         loadedBitmaps: Map<String, Bitmap?>,
         isDarkTheme: Boolean
     ): Bitmap? {
@@ -183,7 +183,7 @@ object ExportHelper {
                     ExportContent(
                         timelineTitle = timelineTitle,
                         coverImagePath = coverImagePath,
-                        events = events,
+                        eventsWithImages = eventsWithImages,
                         loadedBitmaps = loadedBitmaps
                     )
                 }
@@ -239,20 +239,19 @@ object ExportHelper {
     fun ExportContent(
         timelineTitle: String,
         coverImagePath: String?,
-        events: List<TimelineEventEntity>,
+        eventsWithImages: List<Pair<TimelineEventEntity, List<String>>>,
         loadedBitmaps: Map<String, Bitmap?>
     ) {
         val dateFormat = remember {
             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         }
 
-        // 注意：不使用 verticalScroll，因为导出时需要测量完整高度
         Column(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(20.dp)
         ) {
-            // ── 头部：标题 + 导出时间 ──
+            // ── 头部 ──
             Text(
                 text = timelineTitle,
                 style = MaterialTheme.typography.headlineSmall,
@@ -265,8 +264,6 @@ object ExportHelper {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
-            // 封面图片（使用预加载的 Bitmap）
             if (coverImagePath != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 val coverBitmap = loadedBitmaps[coverImagePath]
@@ -274,46 +271,37 @@ object ExportHelper {
                     Image(
                         painter = BitmapPainter(coverBitmap.asImageBitmap()),
                         contentDescription = "封面",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
+                        modifier = Modifier.fillMaxWidth().height(140.dp)
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop
                     )
                 } else {
-                    // 加载失败时显示灰色占位
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
+                        modifier = Modifier.fillMaxWidth().height(140.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
-                    ) {
-                        Text("封面图片", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    ) { Text("封面图片", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
             Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             Spacer(modifier = Modifier.height(16.dp))
 
             // ── 卡片列表 ──
-            events.forEachIndexed { index, event ->
+            eventsWithImages.forEachIndexed { index, (event, images) ->
                 ExportNode(
                     event = event,
+                    images = images,
                     dateFormat = dateFormat,
                     loadedBitmaps = loadedBitmaps,
-                    isLast = index == events.lastIndex
+                    isLast = index == eventsWithImages.lastIndex
                 )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
             Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             Spacer(modifier = Modifier.height(8.dp))
-
-            // ── 底部 ──
             Text(
                 text = "由 Timeline App 生成",
                 style = MaterialTheme.typography.bodySmall,
@@ -327,45 +315,34 @@ object ExportHelper {
     @Composable
     private fun ExportNode(
         event: TimelineEventEntity,
+        images: List<String>,
         dateFormat: SimpleDateFormat,
         loadedBitmaps: Map<String, Bitmap?>,
         isLast: Boolean
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min)
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
         ) {
             // ── 左侧时间轴 ──
             Box(
-                modifier = Modifier
-                    .width(28.dp)
-                    .fillMaxHeight(),
+                modifier = Modifier.width(28.dp).fillMaxHeight(),
                 contentAlignment = Alignment.TopCenter
             ) {
-                // 连接线（贯穿卡片，最后一个裁剪到底部圆点处）
                 if (!isLast) {
                     Box(
-                        modifier = Modifier
-                            .width(2.dp)
-                            .fillMaxHeight()
+                        modifier = Modifier.width(2.dp).fillMaxHeight()
                             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
                     )
                 }
-                // 圆点（与第一行文字对齐）
                 Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .padding(top = 4.dp)
-                        .clip(CircleShape)
-                        .background(Color(event.labelColor))
+                    modifier = Modifier.size(10.dp).padding(top = 4.dp)
+                        .clip(CircleShape).background(Color(event.labelColor))
                 )
             }
 
             // ── 内容 ──
             Column(
-                modifier = Modifier
-                    .weight(1f)
+                modifier = Modifier.weight(1f)
                     .padding(start = 8.dp, bottom = if (isLast) 0.dp else 16.dp)
             ) {
                 Text(
@@ -380,32 +357,29 @@ object ExportHelper {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                // 图片缩略图（使用预加载的 Bitmap，避免 AsyncImage 时序问题）
-                if (event.imagePath != null) {
+                // 多图缩略图行
+                if (images.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(6.dp))
-                    val bitmap = loadedBitmaps[event.imagePath]
-                    if (bitmap != null) {
-                        Image(
-                            painter = BitmapPainter(bitmap.asImageBitmap()),
-                            contentDescription = "图片",
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        // 加载失败时显示灰色占位
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("图片",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        images.take(9).forEach { path ->
+                            val bitmap = loadedBitmaps[path]
+                            if (bitmap != null) {
+                                Image(
+                                    painter = BitmapPainter(bitmap.asImageBitmap()),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(72.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.size(72.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) { Text("图", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
                         }
                     }
                 }

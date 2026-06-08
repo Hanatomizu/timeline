@@ -40,7 +40,7 @@ class TimelineListViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         val db = AppDatabase.getDatabase(application)
-        repository = TimelineRepository(db.timelineDao(), db.timelineEventDao())
+        repository = TimelineRepository(db.timelineDao(), db.timelineEventDao(), db.eventImageDao())
         allTimelines = repository.allTimelines
     }
 

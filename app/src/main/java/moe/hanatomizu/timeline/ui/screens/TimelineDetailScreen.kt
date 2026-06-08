@@ -24,7 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Share
@@ -66,6 +69,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,6 +88,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.hanatomizu.timeline.data.entity.TimelineEventEntity
+import moe.hanatomizu.timeline.ui.components.FullScreenImageGallery
 import moe.hanatomizu.timeline.ui.components.FullScreenImageView
 import moe.hanatomizu.timeline.util.ColorPickerDialog
 import moe.hanatomizu.timeline.util.ImageFileHelper
@@ -116,11 +121,13 @@ fun TimelineDetailScreen(
     val isExporting by viewModel.isExporting.collectAsState()
     val exportFile by viewModel.exportFile.collectAsState()
     val exportError by viewModel.exportError.collectAsState()
+    val eventImageMap by viewModel.eventImageMap.collectAsState()
     val isDarkTheme = isSystemInDarkTheme()
 
     var showEventDialog by remember { mutableStateOf(false) }
     var deleteTargetId by remember { mutableStateOf<Long?>(null) }
-    var previewImagePath by remember { mutableStateOf<String?>(null) }
+    var previewImagePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var previewImageIndex by remember { mutableIntStateOf(0) }
 
     // 初始化 ViewModel
     LaunchedEffect(timelineId) {
@@ -223,8 +230,10 @@ fun TimelineDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(0.dp) // 卡片紧贴，时间轴线连续
             ) {
                 items(events, key = { it.id }) { event ->
+                    val imagePaths = eventImageMap[event.id] ?: emptyList()
                     EventCard(
                         event = event,
+                        imagePaths = imagePaths,
                         onClick = {
                             viewModel.selectEvent(event)
                             showEventDialog = true
@@ -232,8 +241,9 @@ fun TimelineDetailScreen(
                         onLongClick = {
                             deleteTargetId = event.id
                         },
-                        onImageClick = { imagePath ->
-                            previewImagePath = imagePath
+                        onImageClick = { paths, index ->
+                            previewImagePaths = paths
+                            previewImageIndex = index
                         }
                     )
                 }
@@ -296,11 +306,15 @@ fun TimelineDetailScreen(
         )
     }
 
-    // ── 全屏图片预览 ──
-    previewImagePath?.let { path ->
-        FullScreenImageView(
-            imagePath = path,
-            onClose = { previewImagePath = null }
+    // ── 全屏图片预览（支持多图左右滑动） ──
+    if (previewImagePaths.isNotEmpty()) {
+        FullScreenImageGallery(
+            imagePaths = previewImagePaths,
+            initialIndex = previewImageIndex,
+            onClose = {
+                previewImagePaths = emptyList()
+                previewImageIndex = 0
+            }
         )
     }
 }
@@ -319,9 +333,10 @@ fun TimelineDetailScreen(
 @Composable
 private fun EventCard(
     event: TimelineEventEntity,
+    imagePaths: List<String>,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onImageClick: (String) -> Unit
+    onImageClick: (List<String>, Int) -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 
@@ -394,21 +409,27 @@ private fun EventCard(
                 )
 
                 // 图片缩略图
-                // 图片缩略图（点击后全屏预览）
-                if (event.imagePath != null) {
+                // 多图缩略图水平滚动
+                if (imagePaths.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(File(event.imagePath))
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "事件图片",
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onImageClick(event.imagePath) },
-                        contentScale = ContentScale.Crop
-                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(imagePaths) { index, path ->
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(File(path))
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "事件图片",
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onImageClick(imagePaths, index) },
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -430,7 +451,7 @@ private fun EventEditDialog(
 
     val isNewMode by viewModel.isNewEventMode.collectAsState()
     val formContent by viewModel.formContent.collectAsState()
-    val formImagePath by viewModel.formImagePath.collectAsState()
+    val formImagePaths by viewModel.formImagePaths.collectAsState()
     val formLabelColor by viewModel.formLabelColor.collectAsState()
     val formEventDate by viewModel.formEventDate.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -449,7 +470,7 @@ private fun EventEditDialog(
         uri?.let {
             val path = ImageFileHelper.copyImageToInternal(context, it)
             if (path != null) {
-                viewModel.updateFormImagePath(path)
+                viewModel.addFormImagePath(path)
             }
         }
     }
@@ -509,49 +530,71 @@ private fun EventEditDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // ── 图片 ──
-                    if (formImagePath != null) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(File(formImagePath!!))
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = "事件图片",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(160.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            // 删除图片按钮
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                                    .clickable { viewModel.updateFormImagePath(null) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "删除图片",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                    // ── 多图管理器 —— 显示已添加的缩略图 + 添加按钮 ──
+                    Text(
+                        text = "图片（最多 9 张）",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 缩略图列表
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        itemsIndexed(formImagePaths) { index, path ->
+                            Box(modifier = Modifier.size(72.dp)) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(File(path))
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(6.dp)),
+                                    contentScale = ContentScale.Crop
                                 )
+                                // 删除按钮
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(2.dp)
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                        .clickable { viewModel.removeFormImagePath(index) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "删除",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    OutlinedButton(
-                        onClick = { imagePickerLauncher.launch("image/*") }
-                    ) {
-                        Icon(Icons.Default.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (formImagePath == null) "选择图片" else "更换图片")
+                        // 添加按钮
+                        if (formImagePaths.size < 9) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { imagePickerLauncher.launch("image/*") },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "添加图片",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

@@ -5,7 +5,9 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
+import moe.hanatomizu.timeline.data.entity.EventWithImages
 import moe.hanatomizu.timeline.data.entity.TimelineEventEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -22,6 +24,11 @@ interface TimelineEventDao {
     /** 按 ID 查找单个时间点 */
     @Query("SELECT * FROM timeline_events WHERE id = :id")
     suspend fun getEventById(id: Long): TimelineEventEntity?
+
+    /** 获取时间点及其关联图片（一对多） */
+    @Transaction
+    @Query("SELECT * FROM timeline_events WHERE id = :eventId")
+    suspend fun getEventWithImages(eventId: Long): EventWithImages?
 
     /** 插入新时间点，返回生成的主键 */
     @Insert(onConflict = OnConflictStrategy.REPLACE)

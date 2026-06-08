@@ -21,7 +21,7 @@ import java.util.Calendar
 /**
  * 时间线详情界面 ViewModel。
  *
- * 管理某个时间线的所有时间点，以及右侧表单的编辑/新建状态。
+ * 管理某个时间线的所有时间点，以及编辑/新建表单状态。
  */
 class TimelineDetailViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -36,6 +36,10 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     private val _events = MutableStateFlow<List<TimelineEventEntity>>(emptyList())
     val events: StateFlow<List<TimelineEventEntity>> = _events.asStateFlow()
 
+    /** 事件 ID → 图片路径列表缓存，供卡片和预览使用 */
+    private val _eventImageMap = MutableStateFlow<Map<Long, List<String>>>(emptyMap())
+    val eventImageMap: StateFlow<Map<Long, List<String>>> = _eventImageMap.asStateFlow()
+
     // ── 排序状态 ──
     private val _isAscending = MutableStateFlow(true)
     val isAscending: StateFlow<Boolean> = _isAscending.asStateFlow()
@@ -48,11 +52,13 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     val isNewEventMode: StateFlow<Boolean> = _isNewEventMode.asStateFlow()
 
     // ── 表单字段 ──
+
     private val _formContent = MutableStateFlow("")
     val formContent: StateFlow<String> = _formContent.asStateFlow()
 
-    private val _formImagePath = MutableStateFlow<String?>(null)
-    val formImagePath: StateFlow<String?> = _formImagePath.asStateFlow()
+    /** 多张图片路径列表（最多 9 张） */
+    private val _formImagePaths = MutableStateFlow<List<String>>(emptyList())
+    val formImagePaths: StateFlow<List<String>> = _formImagePaths.asStateFlow()
 
     private val _formLabelColor = MutableStateFlow(0xFF9E9E9E.toInt())
     val formLabelColor: StateFlow<Int> = _formLabelColor.asStateFlow()
@@ -69,14 +75,14 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
 
     init {
         val db = AppDatabase.getDatabase(application)
-        repository = TimelineRepository(db.timelineDao(), db.timelineEventDao())
+        repository = TimelineRepository(db.timelineDao(), db.timelineEventDao(), db.eventImageDao())
     }
 
     /**
      * 初始化 —— 传入时间线 ID，加载数据。
      */
     fun initialize(timelineId: Long) {
-        if (this.timelineId == timelineId) return // 避免重复初始化
+        if (this.timelineId == timelineId) return
         this.timelineId = timelineId
 
         viewModelScope.launch {
@@ -91,39 +97,51 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
                 else list.sortedByDescending { it.eventDate }
             }.collect { sortedList ->
                 _events.value = sortedList
-                // 如果当前选中的事件已被删除，重置为新建模式
                 val selected = _selectedEvent.value
                 if (selected != null && sortedList.none { it.id == selected.id }) {
                     resetToNewMode()
                 }
             }
         }
+        // 并行加载每个事件对应的图片列表
+        viewModelScope.launch {
+            _events.collect { list ->
+                val map = mutableMapOf<Long, List<String>>()
+                for (event in list) {
+                    map[event.id] = repository.getImagesByEventId(event.id)
+                        .map { it.imagePath }
+                }
+                _eventImageMap.value = map
+            }
+        }
     }
 
     // ── 事件选择 ──
 
-    /** 选中某个时间点，表单切换到编辑模式 */
+    /** 选中某个时间点，表单切换到编辑模式，并加载其图片列表 */
     fun selectEvent(event: TimelineEventEntity) {
         editingEventId = event.id
         _selectedEvent.value = event
         _formContent.value = event.content
-        _formImagePath.value = event.imagePath
         _formLabelColor.value = event.labelColor
         _formEventDate.value = event.eventDate
         _isNewEventMode.value = false
         _errorMessage.value = null
+        // 异步加载图片
+        viewModelScope.launch {
+            val images = repository.getImagesByEventId(event.id)
+            _formImagePaths.value = images.map { it.imagePath }
+        }
     }
 
     /** 切换到新建时间点模式，清空表单 */
-    fun startNewEvent() {
-        resetToNewMode()
-    }
+    fun startNewEvent() { resetToNewMode() }
 
     private fun resetToNewMode() {
         editingEventId = null
         _selectedEvent.value = null
         _formContent.value = ""
-        _formImagePath.value = null
+        _formImagePaths.value = emptyList()
         _formLabelColor.value = 0xFF9E9E9E.toInt()
         _formEventDate.value = normalizeToMinute(System.currentTimeMillis())
         _isNewEventMode.value = true
@@ -133,11 +151,27 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     // ── 表单更新 ──
 
     fun updateFormContent(content: String) { _formContent.value = content }
-    fun updateFormImagePath(path: String?) { _formImagePath.value = path }
+
+    /** 添加一张图片到表单列表 */
+    fun addFormImagePath(path: String) {
+        val list = _formImagePaths.value
+        if (list.size >= 9) return
+        _formImagePaths.value = list + path
+    }
+
+    /** 从表单列表中删除一张图片（同时删除本地文件） */
+    fun removeFormImagePath(index: Int) {
+        val list = _formImagePaths.value.toMutableList()
+        if (index !in list.indices) return
+        val removed = list.removeAt(index)
+        ImageFileHelper.deleteImage(getApplication(), removed)
+        _formImagePaths.value = list
+    }
+
     fun updateFormLabelColor(color: Int) { _formLabelColor.value = color }
+
     /**
      * 更新日期部分（保留当前表单中的时:分）。
-     * DatePicker 返回的是当天 00:00 UTC 时间戳，需合并当前时:分。
      */
     fun updateFormEventDate(dateMillis: Long) {
         val timeCal = Calendar.getInstance().apply { timeInMillis = _formEventDate.value }
@@ -164,7 +198,7 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
         _formEventDate.value = cal.timeInMillis
     }
 
-    /** 保存（新建或更新）时间点 */
+    /** 保存（新建或更新）时间点，同时保存图片列表 */
     fun saveEvent() {
         val content = _formContent.value.trim()
         if (content.isEmpty()) {
@@ -174,48 +208,46 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
 
         viewModelScope.launch {
             if (_isNewEventMode.value) {
-                // 新建
                 val newId = repository.createEvent(
                     timelineId = timelineId,
                     content = content,
-                    imagePath = _formImagePath.value,
                     labelColor = _formLabelColor.value,
                     eventDate = _formEventDate.value
                 )
-                // 新建成功后选中它
+                // 保存图片
+                repository.replaceImages(newId, _formImagePaths.value)
                 repository.getEventById(newId)?.let { selectEvent(it) }
             } else {
-                // 更新
                 val id = editingEventId ?: return@launch
                 val existing = repository.getEventById(id) ?: return@launch
 
-                // 若图片被更换或移除，清理旧图片文件
-                val oldPath = existing.imagePath
-                val newPath = _formImagePath.value
-                if (oldPath != null && oldPath != newPath) {
-                    ImageFileHelper.deleteImage(getApplication(), oldPath)
+                // 清理不再使用的旧图片文件
+                val oldImages = repository.getImagesByEventId(id)
+                val newPaths = _formImagePaths.value
+                oldImages.forEach { img ->
+                    if (img.imagePath !in newPaths) {
+                        ImageFileHelper.deleteImage(getApplication(), img.imagePath)
+                    }
                 }
 
                 val updated = existing.copy(
                     content = content,
-                    imagePath = newPath,
                     labelColor = _formLabelColor.value,
                     eventDate = _formEventDate.value
                 )
                 repository.updateEvent(updated)
+                repository.replaceImages(id, newPaths)
                 _selectedEvent.value = updated
             }
         }
     }
 
-    /** 删除当前选中的时间点（同时删除关联的图片文件） */
+    /** 删除当前选中的时间点（同时删除所有关联图片文件） */
     fun deleteEvent() {
         val event = _selectedEvent.value ?: return
         viewModelScope.launch {
-            // 先删除关联的图片文件
-            event.imagePath?.let { path ->
-                ImageFileHelper.deleteImage(getApplication(), path)
-            }
+            val images = repository.getImagesByEventId(event.id)
+            images.forEach { ImageFileHelper.deleteImage(getApplication(), it.imagePath) }
             repository.deleteEvent(event)
             resetToNewMode()
         }
@@ -224,24 +256,18 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     /** 根据 ID 直接删除时间点（用于卡片列表长按删除） */
     fun deleteEventById(eventId: Long) {
         viewModelScope.launch {
+            val images = repository.getImagesByEventId(eventId)
+            images.forEach { ImageFileHelper.deleteImage(getApplication(), it.imagePath) }
             val event = repository.getEventById(eventId) ?: return@launch
-            event.imagePath?.let { path ->
-                ImageFileHelper.deleteImage(getApplication(), path)
-            }
             repository.deleteEvent(event)
         }
     }
 
-    fun clearError() {
-        _errorMessage.value = null
-    }
+    fun clearError() { _errorMessage.value = null }
 
     // ── 排序 ──
 
-    /** 切换时间点列表排序顺序（升序 ↔ 降序） */
-    fun toggleSortOrder() {
-        _isAscending.value = !_isAscending.value
-    }
+    fun toggleSortOrder() { _isAscending.value = !_isAscending.value }
 
     // ── 导出 ──
 
@@ -254,30 +280,16 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     private val _exportError = MutableStateFlow<String?>(null)
     val exportError: StateFlow<String?> = _exportError.asStateFlow()
 
-    fun clearExportState() {
-        _exportFile.value = null
-        _exportError.value = null
-    }
+    fun clearExportState() { _exportFile.value = null; _exportError.value = null }
 
-    /**
-     * 导出当前时间线为图片。
-     * @param activityContext Activity 上下文（用于 ComposeView 离屏渲染附着窗口）
-     * @param isDarkTheme 当前是否为深色主题（用于导出图片的配色）
-     */
     fun exportTimeline(activityContext: Context, isDarkTheme: Boolean) {
         if (_isExporting.value) return
-
         val events = _events.value
         val timeline = _timeline.value ?: return
 
-        if (events.isEmpty()) {
-            _exportError.value = "没有时间点可导出"
-            return
-        }
-
+        if (events.isEmpty()) { _exportError.value = "没有时间点可导出"; return }
         if (ExportHelper.isOverLimit(events.size)) {
-            _exportError.value = "时间点过多（超过 ${ExportHelper.MAX_EXPORT_EVENTS} 个），请减少后重试"
-            return
+            _exportError.value = "时间点过多（超过 ${ExportHelper.MAX_EXPORT_EVENTS} 个），请减少后重试"; return
         }
 
         _isExporting.value = true
@@ -285,18 +297,20 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
         _exportError.value = null
 
         viewModelScope.launch {
+            // 导出时需要把每个事件的所有图片路径带过去
+            val eventsWithImages = events.map { event ->
+                val images = repository.getImagesByEventId(event.id)
+                event to images.map { it.imagePath }
+            }
             val file = ExportHelper.exportToFile(
                 context = activityContext,
                 timelineTitle = timeline.title,
                 coverImagePath = timeline.coverImagePath,
-                events = events,
+                eventsWithImages = eventsWithImages,
                 isDarkTheme = isDarkTheme
             )
-            if (file != null) {
-                _exportFile.value = file
-            } else {
-                _exportError.value = "导出失败，请重试"
-            }
+            if (file != null) _exportFile.value = file
+            else _exportError.value = "导出失败，请重试"
             _isExporting.value = false
         }
     }
