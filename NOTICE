@@ -1,0 +1,103 @@
+NOTICE
+======
+
+Timeline - Android Timeline App
+Copyright (c) 2026 hanatomizu <chart11from21 at outlook dot com>
+
+This project is built upon several open-source components. Below are the
+copyright notices and license information for each dependency.
+
+==========================================================================
+Kotlin
+==========================================================================
+Homepage: https://kotlinlang.org/
+License: Apache License 2.0
+Copyright: © 2010-2025 JetBrains s.r.o. and Kotlin Programming Language contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+==========================================================================
+Kotlin Coroutines
+==========================================================================
+Homepage: https://github.com/Kotlin/kotlinx.coroutines
+License: Apache License 2.0
+Copyright: © 2016-2025 JetBrains s.r.o.
+
+==========================================================================
+Android Jetpack (AndroidX)
+==========================================================================
+Homepage: https://developer.android.com/jetpack
+License: Apache License 2.0
+Copyright: © 2018-2025 The Android Open Source Project
+
+Includes the following libraries:
+- androidx.core:core-ktx
+- androidx.activity:activity-compose
+- androidx.lifecycle (lifecycle-runtime-ktx, lifecycle-runtime-compose,
+  lifecycle-viewmodel-compose)
+- androidx.navigation:navigation-compose
+- androidx.compose (ui, ui-graphics, ui-tooling, material3,
+  material-icons-extended)
+- androidx.room:room-runtime
+
+==========================================================================
+Jetpack Compose
+==========================================================================
+Homepage: https://developer.android.com/jetpack/compose
+License: Apache License 2.0
+Copyright: © 2019-2025 The Android Open Source Project
+
+==========================================================================
+Room Database
+==========================================================================
+Homepage: https://developer.android.com/training/data-storage/room
+License: Apache License 2.0
+Copyright: © 2017-2025 The Android Open Source Project
+
+==========================================================================
+KSP (Kotlin Symbol Processing)
+==========================================================================
+Homepage: https://github.com/google/ksp
+License: Apache License 2.0
+Copyright: © 2021-2025 Google LLC
+
+==========================================================================
+Coil (Image Loader)
+==========================================================================
+Homepage: https://coil-kt.github.io/coil/
+License: Apache License 2.0
+Copyright: © 2017-2025 Coil Contributors
+             (originally by Colin White)
+
+==========================================================================
+Material Design Icons
+==========================================================================
+Homepage: https://fonts.google.com/icons
+License: Apache License 2.0
+Copyright: © 2014-2025 Google LLC
+(Icons used via androidx.compose.material:material-icons-extended)
+
+==========================================================================
+Android Gradle Plugin
+==========================================================================
+Homepage: https://developer.android.com/studio/build
+License: Apache License 2.0 (GPL 2.0 for certain components)
+Copyright: © 2013-2025 The Android Open Source Project
+
+==========================================================================
+Gradle Wrapper
+==========================================================================
+Homepage: https://gradle.org
+License: Apache License 2.0
+Copyright: © 2007-2025 Gradle Inc.
+
+NOTE: Some components included via transitive dependencies may be subject
+to additional licenses. Please refer to the individual library documentation
+for complete licensing details.
+
+All other source code in this project is provided under the MIT license
+as specified in the LICENSE file.
