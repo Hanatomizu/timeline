@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -36,9 +37,11 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
@@ -104,9 +107,15 @@ fun TimelineDetailScreen(
     onBack: () -> Unit,
     viewModel: TimelineDetailViewModel
 ) {
+    val context = LocalContext.current
+
     val timeline by viewModel.timeline.collectAsState()
     val events by viewModel.events.collectAsState()
     val isAscending by viewModel.isAscending.collectAsState()
+    val isExporting by viewModel.isExporting.collectAsState()
+    val exportFile by viewModel.exportFile.collectAsState()
+    val exportError by viewModel.exportError.collectAsState()
+    val isDarkTheme = isSystemInDarkTheme()
 
     var showEventDialog by remember { mutableStateOf(false) }
     var deleteTargetId by remember { mutableStateOf<Long?>(null) }
@@ -114,6 +123,28 @@ fun TimelineDetailScreen(
     // 初始化 ViewModel
     LaunchedEffect(timelineId) {
         viewModel.initialize(timelineId)
+    }
+
+    // 导出成功 → 发起分享
+    LaunchedEffect(exportFile) {
+        exportFile?.let { file ->
+            val uri = moe.hanatomizu.timeline.util.ExportHelper.getShareUri(context, file)
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "分享时间线"))
+            viewModel.clearExportState()
+        }
+    }
+
+    // 导出失败 → 提示
+    LaunchedEffect(exportError) {
+        exportError?.let { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.clearExportState()
+        }
     }
 
     Scaffold(
@@ -132,6 +163,16 @@ fun TimelineDetailScreen(
                     }
                 },
                 actions = {
+                    // 导出图片按钮
+                    IconButton(
+                        onClick = { viewModel.exportTimeline(isDarkTheme) }
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "导出为图片"
+                        )
+                    }
+                    // 排序按钮
                     IconButton(onClick = { viewModel.toggleSortOrder() }) {
                         Icon(
                             imageVector = if (isAscending) Icons.Default.ArrowUpward
@@ -226,6 +267,27 @@ fun TimelineDetailScreen(
                     Text("取消")
                 }
             }
+        )
+    }
+
+    // ── 导出进度对话框 ──
+    if (isExporting) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Text("正在导出", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("正在生成图片...", style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {}
         )
     }
 }

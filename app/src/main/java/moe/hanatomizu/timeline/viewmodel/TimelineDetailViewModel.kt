@@ -7,12 +7,14 @@ import moe.hanatomizu.timeline.data.AppDatabase
 import moe.hanatomizu.timeline.data.TimelineRepository
 import moe.hanatomizu.timeline.data.entity.TimelineEntity
 import moe.hanatomizu.timeline.data.entity.TimelineEventEntity
+import moe.hanatomizu.timeline.util.ExportHelper
 import moe.hanatomizu.timeline.util.ImageFileHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Calendar
 
 /**
@@ -238,6 +240,63 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     /** 切换时间点列表排序顺序（升序 ↔ 降序） */
     fun toggleSortOrder() {
         _isAscending.value = !_isAscending.value
+    }
+
+    // ── 导出 ──
+
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
+
+    private val _exportFile = MutableStateFlow<File?>(null)
+    val exportFile: StateFlow<File?> = _exportFile.asStateFlow()
+
+    private val _exportError = MutableStateFlow<String?>(null)
+    val exportError: StateFlow<String?> = _exportError.asStateFlow()
+
+    fun clearExportState() {
+        _exportFile.value = null
+        _exportError.value = null
+    }
+
+    /**
+     * 导出当前时间线为图片。
+     * @param isDarkTheme 当前是否为深色主题（用于导出图片的配色）
+     */
+    fun exportTimeline(isDarkTheme: Boolean) {
+        if (_isExporting.value) return
+
+        val events = _events.value
+        val timeline = _timeline.value ?: return
+
+        if (events.isEmpty()) {
+            _exportError.value = "没有时间点可导出"
+            return
+        }
+
+        if (ExportHelper.isOverLimit(events.size)) {
+            _exportError.value = "时间点过多（超过 ${ExportHelper.MAX_EXPORT_EVENTS} 个），请减少后重试"
+            return
+        }
+
+        _isExporting.value = true
+        _exportFile.value = null
+        _exportError.value = null
+
+        viewModelScope.launch {
+            val file = ExportHelper.exportToFile(
+                context = getApplication(),
+                timelineTitle = timeline.title,
+                coverImagePath = timeline.coverImagePath,
+                events = events,
+                isDarkTheme = isDarkTheme
+            )
+            if (file != null) {
+                _exportFile.value = file
+            } else {
+                _exportError.value = "导出失败，请重试"
+            }
+            _isExporting.value = false
+        }
     }
 
     /** 将时间戳归一化为精确到分钟（保留时:分，秒和毫秒置零） */
