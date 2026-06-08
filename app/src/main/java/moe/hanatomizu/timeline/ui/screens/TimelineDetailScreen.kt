@@ -84,6 +84,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.hanatomizu.timeline.data.entity.TimelineEventEntity
+import moe.hanatomizu.timeline.ui.components.FullScreenImageView
 import moe.hanatomizu.timeline.util.ColorPickerDialog
 import moe.hanatomizu.timeline.util.ImageFileHelper
 import moe.hanatomizu.timeline.viewmodel.TimelineDetailViewModel
@@ -119,6 +120,7 @@ fun TimelineDetailScreen(
 
     var showEventDialog by remember { mutableStateOf(false) }
     var deleteTargetId by remember { mutableStateOf<Long?>(null) }
+    var previewImagePath by remember { mutableStateOf<String?>(null) }
 
     // 初始化 ViewModel
     LaunchedEffect(timelineId) {
@@ -229,6 +231,9 @@ fun TimelineDetailScreen(
                         },
                         onLongClick = {
                             deleteTargetId = event.id
+                        },
+                        onImageClick = { imagePath ->
+                            previewImagePath = imagePath
                         }
                     )
                 }
@@ -290,6 +295,14 @@ fun TimelineDetailScreen(
             confirmButton = {}
         )
     }
+
+    // ── 全屏图片预览 ──
+    previewImagePath?.let { path ->
+        FullScreenImageView(
+            imagePath = path,
+            onClose = { previewImagePath = null }
+        )
+    }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -307,7 +320,8 @@ fun TimelineDetailScreen(
 private fun EventCard(
     event: TimelineEventEntity,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    onImageClick: (String) -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 
@@ -380,6 +394,7 @@ private fun EventCard(
                 )
 
                 // 图片缩略图
+                // 图片缩略图（点击后全屏预览）
                 if (event.imagePath != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     AsyncImage(
@@ -390,7 +405,8 @@ private fun EventCard(
                         contentDescription = "事件图片",
                         modifier = Modifier
                             .size(80.dp)
-                            .clip(RoundedCornerShape(8.dp)),
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onImageClick(event.imagePath) },
                         contentScale = ContentScale.Crop
                     )
                 }

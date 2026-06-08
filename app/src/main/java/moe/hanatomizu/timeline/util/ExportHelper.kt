@@ -4,9 +4,11 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,15 +31,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.compose.runtime.remember
-import coil.compose.AsyncImage
+import androidx.compose.ui.graphics.asImageBitmap
+import coil.Coil
 import coil.request.ImageRequest
+import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.hanatomizu.timeline.data.entity.TimelineEventEntity
@@ -69,13 +72,59 @@ object ExportHelper {
         events: List<TimelineEventEntity>,
         isDarkTheme: Boolean
     ): File? {
+        // 先同步加载所有图片（避免 AsyncImage 异步时序导致导出图片中图片空白）
+        val loadedBitmaps = withContext(Dispatchers.IO) {
+            preloadImages(context, coverImagePath, events)
+        }
+
         val bitmap = withContext(Dispatchers.Main) {
-            renderToBitmap(context, timelineTitle, coverImagePath, events, isDarkTheme)
+            renderToBitmap(
+                context, timelineTitle, coverImagePath, events, loadedBitmaps, isDarkTheme
+            )
         } ?: return null
 
         return withContext(Dispatchers.IO) {
             saveBitmapToCache(context, bitmap)
         }
+    }
+
+    /**
+     * 预加载所有图片（封面 + 事件图片）为 Bitmap，供导出组件同步绘制。
+     * 返回 Map<原始路径, Bitmap?>，加载失败时 value 为 null。
+     */
+    private suspend fun preloadImages(
+        context: Context,
+        coverImagePath: String?,
+        events: List<TimelineEventEntity>
+    ): Map<String, Bitmap?> {
+        val paths = mutableListOf<String>()
+        coverImagePath?.let { paths.add(it) }
+        events.forEach { it.imagePath?.let { paths.add(it) } }
+
+        val loader = Coil.imageLoader(context)
+
+        val result = mutableMapOf<String, Bitmap?>()
+        for (path in paths) {
+            if (path in result) continue
+            result[path] = try {
+                val request = ImageRequest.Builder(context)
+                    .data(File(path))
+                    .size(320)
+                    .build()
+                val response = loader.execute(request)
+                if (response is SuccessResult) {
+                    val original = (response.drawable as? BitmapDrawable)?.bitmap
+                    // hardware bitmap 无法被 Canvas.drawBitmap 绘制，强制转为 software
+                    original?.copy(Bitmap.Config.ARGB_8888, false)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ExportHelper", "preload image failed: $path", e)
+                null
+            }
+        }
+        return result
     }
 
     /**
@@ -108,6 +157,7 @@ object ExportHelper {
         timelineTitle: String,
         coverImagePath: String?,
         events: List<TimelineEventEntity>,
+        loadedBitmaps: Map<String, Bitmap?>,
         isDarkTheme: Boolean
     ): Bitmap? {
         val activity = context as? Activity ?: return null
@@ -133,7 +183,8 @@ object ExportHelper {
                     ExportContent(
                         timelineTitle = timelineTitle,
                         coverImagePath = coverImagePath,
-                        events = events
+                        events = events,
+                        loadedBitmaps = loadedBitmaps
                     )
                 }
             }
@@ -151,7 +202,7 @@ object ExportHelper {
             composeView.draw(canvas)
             bitmap
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("ExportHelper", "renderToBitmap failed", e)
             null
         } finally {
             // 从窗口移除临时 View
@@ -188,7 +239,8 @@ object ExportHelper {
     fun ExportContent(
         timelineTitle: String,
         coverImagePath: String?,
-        events: List<TimelineEventEntity>
+        events: List<TimelineEventEntity>,
+        loadedBitmaps: Map<String, Bitmap?>
     ) {
         val dateFormat = remember {
             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -214,21 +266,33 @@ object ExportHelper {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // 封面图片
+            // 封面图片（使用预加载的 Bitmap）
             if (coverImagePath != null) {
                 Spacer(modifier = Modifier.height(12.dp))
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(File(coverImagePath))
-                        .crossfade(false)
-                        .build(),
-                    contentDescription = "封面",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(140.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
+                val coverBitmap = loadedBitmaps[coverImagePath]
+                if (coverBitmap != null) {
+                    Image(
+                        painter = BitmapPainter(coverBitmap.asImageBitmap()),
+                        contentDescription = "封面",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    // 加载失败时显示灰色占位
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("封面图片", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -240,6 +304,7 @@ object ExportHelper {
                 ExportNode(
                     event = event,
                     dateFormat = dateFormat,
+                    loadedBitmaps = loadedBitmaps,
                     isLast = index == events.lastIndex
                 )
             }
@@ -263,6 +328,7 @@ object ExportHelper {
     private fun ExportNode(
         event: TimelineEventEntity,
         dateFormat: SimpleDateFormat,
+        loadedBitmaps: Map<String, Bitmap?>,
         isLast: Boolean
     ) {
         Row(
@@ -314,19 +380,34 @@ object ExportHelper {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                // 图片缩略图（使用预加载的 Bitmap，避免 AsyncImage 时序问题）
                 if (event.imagePath != null) {
                     Spacer(modifier = Modifier.height(6.dp))
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(File(event.imagePath))
-                            .crossfade(false)
-                            .build(),
-                        contentDescription = "图片",
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        contentScale = ContentScale.Crop
-                    )
+                    val bitmap = loadedBitmaps[event.imagePath]
+                    if (bitmap != null) {
+                        Image(
+                            painter = BitmapPainter(bitmap.asImageBitmap()),
+                            contentDescription = "图片",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        // 加载失败时显示灰色占位
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("图片",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
