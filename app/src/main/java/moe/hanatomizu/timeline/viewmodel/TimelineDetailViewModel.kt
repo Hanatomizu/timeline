@@ -54,7 +54,7 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     private val _formLabelColor = MutableStateFlow(0xFF9E9E9E.toInt())
     val formLabelColor: StateFlow<Int> = _formLabelColor.asStateFlow()
 
-    private val _formEventDate = MutableStateFlow(normalizeDate(System.currentTimeMillis()))
+    private val _formEventDate = MutableStateFlow(normalizeToMinute(System.currentTimeMillis()))
     val formEventDate: StateFlow<Long> = _formEventDate.asStateFlow()
 
     /** 校验错误信息 */
@@ -122,7 +122,7 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
         _formContent.value = ""
         _formImagePath.value = null
         _formLabelColor.value = 0xFF9E9E9E.toInt()
-        _formEventDate.value = normalizeDate(System.currentTimeMillis())
+        _formEventDate.value = normalizeToMinute(System.currentTimeMillis())
         _isNewEventMode.value = true
         _errorMessage.value = null
     }
@@ -132,7 +132,34 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
     fun updateFormContent(content: String) { _formContent.value = content }
     fun updateFormImagePath(path: String?) { _formImagePath.value = path }
     fun updateFormLabelColor(color: Int) { _formLabelColor.value = color }
-    fun updateFormEventDate(dateMillis: Long) { _formEventDate.value = normalizeDate(dateMillis) }
+    /**
+     * 更新日期部分（保留当前表单中的时:分）。
+     * DatePicker 返回的是当天 00:00 UTC 时间戳，需合并当前时:分。
+     */
+    fun updateFormEventDate(dateMillis: Long) {
+        val timeCal = Calendar.getInstance().apply { timeInMillis = _formEventDate.value }
+        val hour = timeCal.get(Calendar.HOUR_OF_DAY)
+        val minute = timeCal.get(Calendar.MINUTE)
+
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = dateMillis
+        cal.set(Calendar.HOUR_OF_DAY, hour)
+        cal.set(Calendar.MINUTE, minute)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        _formEventDate.value = cal.timeInMillis
+    }
+
+    /** 单独更新时间部分（时:分），不影响日期 */
+    fun updateFormEventTime(hourOfDay: Int, minute: Int) {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = _formEventDate.value
+        cal.set(Calendar.HOUR_OF_DAY, hourOfDay)
+        cal.set(Calendar.MINUTE, minute)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        _formEventDate.value = cal.timeInMillis
+    }
 
     /** 保存（新建或更新）时间点 */
     fun saveEvent() {
@@ -213,12 +240,10 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
         _isAscending.value = !_isAscending.value
     }
 
-    /** 将时间戳归一化为当天 00:00（本地时区） */
-    private fun normalizeDate(millis: Long): Long {
+    /** 将时间戳归一化为精确到分钟（保留时:分，秒和毫秒置零） */
+    private fun normalizeToMinute(millis: Long): Long {
         val cal = Calendar.getInstance()
         cal.timeInMillis = millis
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
         return cal.timeInMillis

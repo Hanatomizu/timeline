@@ -59,6 +59,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -244,7 +245,7 @@ private fun EventCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 
     Card(
         modifier = Modifier
@@ -273,7 +274,7 @@ private fun EventCard(
                     .weight(1f)
                     .padding(12.dp)
             ) {
-                // 日期
+                // 日期时间
                 Text(
                     text = dateFormat.format(Date(event.eventDate)),
                     style = MaterialTheme.typography.labelLarge,
@@ -332,10 +333,11 @@ private fun EventEditDialog(
     val formEventDate by viewModel.formEventDate.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
-    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val dateTimeFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 
     var showColorPicker by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     // 图片选取器
@@ -470,9 +472,9 @@ private fun EventEditDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // ── 日期 ──
+                    // ── 日期和时间 —— 点击后先选日期再选时间 ──
                     Text(
-                        text = "日期",
+                        text = "日期和时间",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -480,7 +482,7 @@ private fun EventEditDialog(
                     OutlinedButton(onClick = { showDatePicker = true }) {
                         Icon(Icons.Default.CalendarMonth, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = dateFormat.format(Date(formEventDate)))
+                        Text(text = dateTimeFormat.format(Date(formEventDate)))
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -541,7 +543,7 @@ private fun EventEditDialog(
         )
     }
 
-    // ── 日期选择器（子对话框） ──
+    // ── 日期选择器 —— 确认后自动弹出时间选择器 ──
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = formEventDate
@@ -554,8 +556,9 @@ private fun EventEditDialog(
                         viewModel.updateFormEventDate(millis)
                     }
                     showDatePicker = false
+                    showTimePicker = true // 选完日期接着选时间
                 }) {
-                    Text("确认")
+                    Text("确认日期")
                 }
             },
             dismissButton = {
@@ -566,6 +569,24 @@ private fun EventEditDialog(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    // ── 时间选择器（Android 原生 TimePickerDialog） ──
+    if (showTimePicker) {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = formEventDate
+        val initialHour = cal.get(Calendar.HOUR_OF_DAY)
+        val initialMinute = cal.get(Calendar.MINUTE)
+
+        PlatformTimePickerDialog(
+            initialHour = initialHour,
+            initialMinute = initialMinute,
+            onTimeSelected = { hour, minute ->
+                viewModel.updateFormEventTime(hour, minute)
+                showTimePicker = false
+            },
+            onDismiss = { showTimePicker = false }
+        )
     }
 
     // ── 弹窗内的删除二次确认 ──
@@ -589,5 +610,43 @@ private fun EventEditDialog(
                 }
             }
         )
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Android 原生 TimePickerDialog 封装
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * 使用 Android 平台 [android.app.TimePickerDialog] 选择时间（时:分）。
+ * 兼容 API 23+，24 小时制，跟随系统设置。
+ */
+@Composable
+private fun PlatformTimePickerDialog(
+    initialHour: Int,
+    initialMinute: Int,
+    onTimeSelected: (hour: Int, minute: Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        val dialog = android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                onTimeSelected(hourOfDay, minute)
+            },
+            initialHour,
+            initialMinute,
+            android.provider.Settings.System.getInt(
+                context.contentResolver,
+                android.provider.Settings.System.TIME_12_24,
+                24
+            ) == 24 // 跟随系统 12/24 小时制
+        )
+        dialog.setOnDismissListener { onDismiss() }
+        dialog.show()
+        onDispose {
+            dialog.dismiss()
+        }
     }
 }

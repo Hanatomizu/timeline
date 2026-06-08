@@ -33,6 +33,6 @@ data class TimelineEventEntity(
     val imagePath: String? = null,
     /** 标签颜色 ARGB 值，如 0xFFEF5350；默认灰色 */
     val labelColor: Int = 0xFF9E9E9E.toInt(),
-    /** 事件日期 —— 当天 00:00 的时间戳（毫秒），用于排序和显示 */
+    /** 事件日期时间 —— 精确到分钟的时间戳（毫秒），用于排序和显示 */
     val eventDate: Long
 )
