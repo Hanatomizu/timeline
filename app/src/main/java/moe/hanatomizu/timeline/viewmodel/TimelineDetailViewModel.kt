@@ -11,6 +11,7 @@ import moe.hanatomizu.timeline.util.ImageFileHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -31,6 +32,10 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
 
     private val _events = MutableStateFlow<List<TimelineEventEntity>>(emptyList())
     val events: StateFlow<List<TimelineEventEntity>> = _events.asStateFlow()
+
+    // ── 排序状态 ──
+    private val _isAscending = MutableStateFlow(true)
+    val isAscending: StateFlow<Boolean> = _isAscending.asStateFlow()
 
     // ── 选中状态 ──
     private val _selectedEvent = MutableStateFlow<TimelineEventEntity?>(null)
@@ -75,11 +80,17 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
             _timeline.value = repository.getTimelineById(timelineId)
         }
         viewModelScope.launch {
-            repository.getEventsByTimelineId(timelineId).collect { list ->
-                _events.value = list
+            combine(
+                repository.getEventsByTimelineId(timelineId),
+                _isAscending
+            ) { list, ascending ->
+                if (ascending) list.sortedBy { it.eventDate }
+                else list.sortedByDescending { it.eventDate }
+            }.collect { sortedList ->
+                _events.value = sortedList
                 // 如果当前选中的事件已被删除，重置为新建模式
                 val selected = _selectedEvent.value
-                if (selected != null && list.none { it.id == selected.id }) {
+                if (selected != null && sortedList.none { it.id == selected.id }) {
                     resetToNewMode()
                 }
             }
@@ -193,6 +204,13 @@ class TimelineDetailViewModel(application: Application) : AndroidViewModel(appli
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    // ── 排序 ──
+
+    /** 切换时间点列表排序顺序（升序 ↔ 降序） */
+    fun toggleSortOrder() {
+        _isAscending.value = !_isAscending.value
     }
 
     /** 将时间戳归一化为当天 00:00（本地时区） */

@@ -31,6 +31,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Photo
@@ -89,7 +91,7 @@ import java.util.Locale
 /**
  * 时间线详情界面 —— 卡片列表 + 编辑弹窗布局。
  *
- * - 列表：按日期升序排列的卡片，每张卡片显示日期、内容、缩略图、标签色带。
+ * - 列表：按日期排列的卡片（默认升序，右上角可切换升降序），每张卡片显示日期、内容、缩略图、标签色带。
  * - 点击卡片弹出编辑弹窗；长按卡片直接删除（需确认）。
  * - FAB 按钮创建新时间点。
  */
@@ -102,6 +104,7 @@ fun TimelineDetailScreen(
 ) {
     val timeline by viewModel.timeline.collectAsState()
     val events by viewModel.events.collectAsState()
+    val isAscending by viewModel.isAscending.collectAsState()
 
     var showEventDialog by remember { mutableStateOf(false) }
     var deleteTargetId by remember { mutableStateOf<Long?>(null) }
@@ -124,6 +127,15 @@ fun TimelineDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                        Icon(
+                            imageVector = if (isAscending) Icons.Default.ArrowUpward
+                                         else Icons.Default.ArrowDownward,
+                            contentDescription = if (isAscending) "升序排列" else "降序排列"
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
