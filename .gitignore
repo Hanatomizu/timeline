@@ -1,0 +1,93 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.history/
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+# Java
+*.class
+*.log
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+# Android
+.gradle
+/local.properties
+/.idea
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+# Logs
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+# Vim
+[._]*.s[a-v][a-z]
+!*.svg
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+.netrwhist
+tags
+[._]*.un~
+# Eclipse
+.metadata
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+.settings/
+.loadpath
+.recommenders
+
+/app/build/
+/.gradle/
+/app/.gradle/
+
+# Claude
+/.claude/
