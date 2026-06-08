@@ -88,6 +88,7 @@ tmp/
 /app/build/
 /.gradle/
 /app/.gradle/
+/app/release
 
 # Claude
 /.claude/
